@@ -1,0 +1,414 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Platform {
+  INSTAGRAM
+  YOUTUBE
+  TIKTOK
+  FACEBOOK
+  X_TWITTER
+  LINKEDIN
+  PINTEREST
+  THREADS
+}
+
+enum ContentType {
+  VIDEO
+  PHOTO
+  CAROUSEL
+  TEXT
+  STORY
+  SHORT
+}
+
+enum GeneratedStatus {
+  DRAFT
+  APPROVED
+  REJECTED
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  NEEDS_APPROVAL
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+enum KeywordType {
+  PRIMARY
+  SECONDARY
+  HASHTAG_HIGH
+  HASHTAG_MEDIUM
+  HASHTAG_NICHE
+  TRENDING_TOPIC
+  AUDIENCE_INTEREST
+  COMPETITOR_KEYWORD
+}
+
+enum DealStatus {
+  LEAD
+  CONTACTED
+  RESPONSE_RECEIVED
+  REQUIREMENTS_RECEIVED
+  REQUIREMENTS_COMPLETE
+  PROPOSAL_SENT
+  AWAITING_RESPONSE
+  CREATOR_APPROVAL
+  CONTRACT_PENDING
+  CONTRACT_SIGNED
+  DEAL_CONFIRMED
+  CAMPAIGN_ACTIVE
+  DELIVERABLES_COMPLETED
+  PAYMENT_PENDING
+  PAYMENT_RECEIVED
+  DEAL_COMPLETED
+  REJECTED
+  CLOSED
+}
+
+enum CommunicationDir {
+  INBOUND
+  OUTBOUND
+  INTERNAL_NOTE
+}
+
+enum ContractStatus {
+  PENDING
+  SENT
+  RECEIVED
+  UNDER_REVIEW
+  SIGNED
+  REJECTED
+}
+
+// ─── Users & Auth ────────────────────────────────────────────────────────────
+
+model User {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  name         String
+  avatarUrl    String?
+  passwordHash String? // null if social-only auth
+  niche        String? // e.g. "Tech + Smartphones"
+  bio          String?
+  location     String?
+  currency     String  @default("INR")
+
+  anthropicApiKey   String?
+  geminiApiKey      String?
+  defaultAiProvider String  @default("GEMINI")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  socialAccounts SocialAccount[]
+  content        Content[]
+  sponsorships   Sponsorship[]
+  brands         Brand[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("sessions")
+}
+
+// ─── Social Accounts ─────────────────────────────────────────────────────────
+
+model SocialAccount {
+  id             String    @id @default(cuid())
+  userId         String
+  platform       Platform
+  accountId      String // platform-native ID
+  username       String
+  displayName    String?
+  avatarUrl      String?
+  accessToken    String // AES-256 encrypted at rest
+  refreshToken   String? // AES-256 encrypted at rest
+  tokenExpiresAt DateTime?
+  followerCount  Int?
+  followingCount Int?
+  postCount      Int?
+  isActive       Boolean   @default(true)
+  lastSyncedAt   DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduledPosts ScheduledPost[]
+  analytics      AccountAnalytics[]
+
+  @@unique([userId, platform, accountId])
+  @@map("social_accounts")
+}
+
+// ─── Content Pipeline ─────────────────────────────────────────────────────────
+
+model Content {
+  id          String      @id @default(cuid())
+  userId      String
+  rawInput    String // user's original description/idea
+  contentType ContentType
+  mediaUrls   String[] // S3/Cloudflare R2 URLs
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generatedPosts  GeneratedPost[]
+  keywordAnalyses KeywordAnalysis[]
+
+  @@map("content")
+}
+
+model GeneratedPost {
+  id               String          @id @default(cuid())
+  contentId        String
+  platform         Platform
+  caption          String
+  hook             String?
+  cta              String?
+  hashtags         String[]
+  keywords         String[]
+  suggestedTime    DateTime?
+  opportunityScore Int? // 0-100 overall
+  scoreBreakdown   Json? // {searchRelevance, trendScore, competition, audienceMatch, contentFit}
+  platformMeta     Json // platform-specific fields (title, chapters, thumbnailConcept, etc.)
+  status           GeneratedStatus @default(DRAFT)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  content       Content        @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  scheduledPost ScheduledPost?
+
+  @@map("generated_posts")
+}
+
+// ─── Scheduling ──────────────────────────────────────────────────────────────
+
+model ScheduledPost {
+  id              String     @id @default(cuid())
+  generatedPostId String     @unique
+  socialAccountId String
+  scheduledAt     DateTime
+  publishedAt     DateTime?
+  status          PostStatus @default(SCHEDULED)
+  failureReason   String?
+  platformPostId  String? // ID returned from platform after publish
+  retryCount      Int        @default(0)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  generatedPost GeneratedPost @relation(fields: [generatedPostId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@map("scheduled_posts")
+}
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+model AccountAnalytics {
+  id              String   @id @default(cuid())
+  socialAccountId String
+  date            DateTime @db.Date
+  followers       Int?
+  impressions     Int?
+  reach           Int?
+  engagementRate  Float?
+  profileViews    Int?
+  likes           Int?
+  comments        Int?
+  shares          Int?
+  saves           Int?
+  createdAt       DateTime @default(now())
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([socialAccountId, date])
+  @@map("account_analytics")
+}
+
+// ─── SEO / Keyword Intelligence ───────────────────────────────────────────────
+
+model KeywordAnalysis {
+  id              String      @id @default(cuid())
+  contentId       String
+  platform        Platform
+  keyword         String
+  keywordType     KeywordType
+  searchRelevance Int // 0-100
+  trendScore      Int // 0-100
+  competition     Int // 0-100
+  audienceMatch   Int // 0-100
+  overallScore    Int // 0-100
+  createdAt       DateTime    @default(now())
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@map("keyword_analyses")
+}
+
+// ─── Sponsorship CRM ─────────────────────────────────────────────────────────
+
+model Brand {
+  id           String   @id @default(cuid())
+  userId       String // the creator who added this brand
+  name         String
+  website      String?
+  industry     String?
+  logoUrl      String?
+  contactEmail String?
+  contactName  String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sponsorships Sponsorship[]
+
+  @@map("brands")
+}
+
+model Sponsorship {
+  id              String     @id @default(cuid())
+  userId          String
+  brandId         String
+  campaignName    String
+  platforms       Platform[]
+  status          DealStatus @default(LEAD)
+  budget          Decimal?   @db.Decimal(12, 2)
+  currency        String     @default("INR")
+  deadline        DateTime?
+  productName     String?
+  productReceived Boolean    @default(false)
+  notes           String?
+  matchScore      Int? // 0-100, from Brand Discovery Engine
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand              Brand               @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  deliverables       Deliverable[]
+  requirements       DealRequirement[]
+  communications     Communication[]
+  contract           Contract?
+  verificationChecks VerificationCheck[]
+  statusHistory      DealStatusHistory[]
+
+  @@map("sponsorships")
+}
+
+model DealStatusHistory {
+  id            String      @id @default(cuid())
+  sponsorshipId String
+  fromStatus    DealStatus?
+  toStatus      DealStatus
+  changedAt     DateTime    @default(now())
+  note          String?
+
+  sponsorship Sponsorship @relation(fields: [sponsorshipId], references: [id], onDelete: Cascade)
+
+  @@map("deal_status_history")
+}
+
+model Deliverable {
+  id            String    @id @default(cuid())
+  sponsorshipId String
+  platform      Platform
+  type          String // "reel", "story", "video_integration", "post", "short"
+  quantity      Int       @default(1)
+  dueDate       DateTime?
+  completedAt   DateTime?
+  isComplete    Boolean   @default(false)
+  notes         String?
+
+  sponsorship Sponsorship @relation(fields: [sponsorshipId], references: [id], onDelete: Cascade)
+
+  @@map("deliverables")
+}
+
+model DealRequirement {
+  id            String   @id @default(cuid())
+  sponsorshipId String
+  field         String // "payment_amount", "usage_rights", "exclusivity", "deadline", etc.
+  label         String // Human-readable: "Payment Amount"
+  value         String? // extracted or manually entered value
+  isRequired    Boolean  @default(true)
+  isVerified    Boolean  @default(false)
+  source        String? // "ai_extraction", "manual", "contract"
+  extractedFrom String? // communication ID if AI-extracted
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sponsorship Sponsorship @relation(fields: [sponsorshipId], references: [id], onDelete: Cascade)
+
+  @@map("deal_requirements")
+}
+
+model VerificationCheck {
+  id            String    @id @default(cuid())
+  sponsorshipId String
+  checkName     String // "brand_agreement", "creator_approval", "payment_terms_defined", etc.
+  label         String // Human-readable
+  isPassed      Boolean   @default(false)
+  passedAt      DateTime?
+  notes         String?
+
+  sponsorship Sponsorship @relation(fields: [sponsorshipId], references: [id], onDelete: Cascade)
+
+  @@map("verification_checks")
+}
+
+model Communication {
+  id            String           @id @default(cuid())
+  sponsorshipId String
+  direction     CommunicationDir
+  channel       String // "email", "whatsapp", "manual_note"
+  subject       String?
+  body          String
+  extractedData Json? // AI-extracted structured requirements (raw output)
+  isProcessed   Boolean          @default(false)
+  timestamp     DateTime         @default(now())
+
+  sponsorship Sponsorship @relation(fields: [sponsorshipId], references: [id], onDelete: Cascade)
+
+  @@map("communications")
+}
+
+model Contract {
+  id              String         @id @default(cuid())
+  sponsorshipId   String         @unique
+  fileUrl         String? // S3/R2 URL to contract PDF
+  status          ContractStatus @default(PENDING)
+  sentAt          DateTime?
+  receivedAt      DateTime?
+  signedByCreator Boolean        @default(false)
+  signedByBrand   Boolean        @default(false)
+  signedAt        DateTime?
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  sponsorship Sponsorship @relation(fields: [sponsorshipId], references: [id], onDelete: Cascade)
+
+  @@map("contracts")
+}

@@ -1,0 +1,23 @@
+{
+  "name": "vyro",
+  "version": "0.0.1",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "test": "turbo test",
+    "db:generate": "pnpm --filter @vyro/database db:generate",
+    "db:migrate": "pnpm --filter @vyro/database db:migrate",
+    "db:studio": "pnpm --filter @vyro/database db:studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "^5.8.3"
+  },
+  "prisma": {
+    "schema": "backend/database/prisma/schema.prisma"
+  }
+}
