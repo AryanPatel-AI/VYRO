@@ -455,7 +455,7 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
-      "value": "/Users/aryanpatel/CODE/GITHUB/VYRO/packages/database/generated/client",
+      "value": "/Users/aryanpatel/CODE/GITHUB/VYRO/backend/database/generated/client",
       "fromEnvVar": null
     },
     "config": {
@@ -469,7 +469,7 @@ const config = {
       }
     ],
     "previewFeatures": [],
-    "sourceFilePath": "/Users/aryanpatel/CODE/GITHUB/VYRO/packages/database/prisma/schema.prisma",
+    "sourceFilePath": "/Users/aryanpatel/CODE/GITHUB/VYRO/backend/database/prisma/schema.prisma",
     "isCustomOutput": true
   },
   "relativeEnvPaths": {
@@ -483,6 +483,7 @@ const config = {
     "db"
   ],
   "activeProvider": "postgresql",
+  "postinstall": false,
   "inlineDatasources": {
     "db": {
       "url": {
